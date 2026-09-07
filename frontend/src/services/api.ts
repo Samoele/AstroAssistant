@@ -15,14 +15,23 @@ export async function checkBackendHealth(): Promise<HealthResponse> {
   return response.json();
 }
 
-export async function sendChatMessage(payload: ChatRequest): Promise<AgentResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/mock-avatar-state`, {
+export async function sendChatMessage(message: string, userId = 'default_user'): Promise<AgentResponse> {
+  const payload: ChatRequest = {
+    user_id: userId,
+    message,
+  };
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(payload),
   });
+
   if (!response.ok) {
-    throw new Error(`Server returned HTTP status ${response.status}`);
+    throw new Error(`Chat API error: ${response.statusText}`);
   }
+
   return response.json();
 }
