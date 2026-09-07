@@ -37,7 +37,7 @@ export default function App() {
     setCurrentAnimation('talking');
 
     try {
-      const data = await sendChatMessage({ user_id: 'user_default', message: text });
+      const data = await sendChatMessage(text, 'user_default');
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: 'assistant', text: data.response_text },
