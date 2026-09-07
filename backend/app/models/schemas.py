@@ -13,6 +13,7 @@ class EmotionEnum(str, Enum):
     ANGRY = "angry"
     EXCITED = "excited"
     GRUMPY = "grumpy"
+    THINKING = "thinking"
     
 
 class AnimationStateEnum(str, Enum):
@@ -22,7 +23,6 @@ class AnimationStateEnum(str, Enum):
     """
     IDLE = "idle"
     WAVING = "waving"
-    THINKING = "thinking"
     TALKING = "talking"
     REACTING = "reacting"
 
