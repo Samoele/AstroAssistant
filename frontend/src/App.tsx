@@ -31,19 +31,46 @@ export default function App() {
   }, []);
 
   const handleSend = async (text: string) => {
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', text };
-    setMessages((prev) => [...prev, userMessage]);
+    if (!text.trim() || isSending) return;
+
+    const userMessage: ChatMessage = { 
+      id: crypto.randomUUID(), 
+      role: 'user', 
+      text 
+    };
+
+    // 1. Build updated history array including the user's latest message
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setIsSending(true);
-    setCurrentAnimation('talking');
+
+    // 2. Map chat messages to role/content pairs for backend context memory
+    const historyPayload = updatedMessages.map((m) => ({
+      role: m.role,
+      content: m.text,
+    }));
 
     try {
-      const data = await sendChatMessage(text, 'user_default');
+      // 3. Send message with prior conversational history
+      const data = await sendChatMessage(text, historyPayload, 'user_default');
+
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: 'assistant', text: data.response_text },
       ]);
-      setCurrentEmotion(toAvatarEmotion(data.avatar_state.emotion));
-      setCurrentAnimation(toAvatarAnimation(data.avatar_state.animation));
+
+      const nextEmotion = toAvatarEmotion(data.avatar_state.emotion);
+      const nextAnimation = toAvatarAnimation(data.avatar_state.animation);
+
+      setCurrentEmotion(nextEmotion);
+      setCurrentAnimation(nextAnimation);
+
+      // Return avatar to idle after 3.5s so it does not stay talking/reacting forever
+      if (nextAnimation !== 'idle') {
+        setTimeout(() => {
+          setCurrentAnimation('idle');
+        }, 3500);
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -66,10 +93,15 @@ export default function App() {
         <div>
           <h1 className="text-lg font-bold text-emerald-400">AI Companion</h1>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className={`w-2 h-2 rounded-full ${
-              backendStatus === 'connected' ? 'bg-emerald-400 animate-pulse' :
-              backendStatus === 'checking' ? 'bg-amber-400' : 'bg-rose-500'
-            }`} />
+            <span
+              className={`w-2 h-2 rounded-full ${
+                backendStatus === 'connected'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : backendStatus === 'checking'
+                  ? 'bg-amber-400'
+                  : 'bg-rose-500'
+              }`}
+            />
             <span className="text-[10px] text-slate-400 uppercase tracking-wide">
               API: {backendStatus}
             </span>

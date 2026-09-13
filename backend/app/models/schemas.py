@@ -43,12 +43,17 @@ class AvatarState(BaseModel):
         description="The reason for the avatar's current mood"
     )
 
+class ChatHistoryMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
 class ChatRequest(BaseModel):
     """
     Incoming payload from the React frontend.
     """
     user_id: str= Field(default="user_default")
     message: str = Field(..., min_length=1, description="Message typed by the user")
+    history: Optional[List[ChatHistoryMessage]] = Field(default_factory=list)
 
 
 class AgentResponse(BaseModel):

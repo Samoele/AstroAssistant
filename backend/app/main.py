@@ -50,10 +50,10 @@ async def health_check():
 @app.post("/api/v1/chat", response_model=AgentResponse, tags=["Companion"])
 async def chat_endpoint(request: ChatRequest):
     """
-    Receives user dialogue, processes it through Gemini,
+    Receives user dialogue, processes it through Groq,
     and returns dialogue plus avatar emotional/kinetic instructions.
     """
-    return generate_companion_response(request.message)
+    return generate_companion_response(request.message, request.history)
 
 
 
