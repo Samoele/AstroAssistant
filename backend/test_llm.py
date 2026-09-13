@@ -1,8 +1,7 @@
-from app.services.llm_service import generate_companion_response
 import time
+from app.services.llm_service import generate_companion_response
 
 def run_tests():
-    # Test cases designed to trigger different emotional reactions
     test_cases = [
         {
             "scenario": "Healthy achievement (Should trigger 'excited' or 'happy')",
@@ -23,25 +22,30 @@ def run_tests():
     ]
 
     print("==================================================")
-    print("STARTING GEMINI LLM SERVICE INTEGRATION TESTS")
+    print("BENCHMARKING LOCAL HERMES INFERENCE LATENCY")
     print("==================================================")
+
+    total_start = time.perf_counter()
 
     for i, test in enumerate(test_cases, start=1):
         print(f"\n--- TEST CASE #{i}: {test['scenario']} ---")
         print(f"User Message: \"{test['prompt']}\"")
         
-        # Call our Gemini-backed service function
+        # Start timer right before inference
+        start_time = time.perf_counter()
         response = generate_companion_response(test['prompt'])
+        elapsed_time = time.perf_counter() - start_time
 
-        # Print the structured fields returned by the model
         print(f"\n[Companion Dialogue]: {response.response_text}")
         print(f"[Avatar Emotion]    : {response.avatar_state.emotion.value}")
         print(f"[Kinetic Animation] : {response.avatar_state.animation.value}")
         print(f"[Mood Reason]       : {response.avatar_state.mood_reason}")
         print(f"[Suggested Actions] : {response.suggested_actions}")
+        print(f"⏱️ [Inference Latency]: {elapsed_time:.2f} seconds")
         print("-" * 50)
 
-        time.sleep(1.5)
+    total_elapsed = time.perf_counter() - total_start
+    print(f"\nTotal benchmark time across all 4 tests: {total_elapsed:.2f} seconds")
 
 if __name__ == "__main__":
     run_tests()

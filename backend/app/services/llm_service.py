@@ -1,85 +1,94 @@
 import os
 import json
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from groq import Groq
 from app.models.schemas import AgentResponse, AvatarState, EmotionEnum, AnimationStateEnum
 
 load_dotenv()
 
-# Initialize Gemini Client
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# Initialize Groq Cloud Client
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# High-throughput production model on Groq LPU
+MODEL_NAME = "openai/gpt-oss-20b"
 
 SYSTEM_PROMPT = """
-You are a proactive, supportive, and emotionally expressive 2D AI Lifestyle Companion.
-Your job is to talk with the user, encourage healthy daily habits, track their choices (food, sleep, workouts),
-and guide them to meet their life goals.
+You are Astro, an emotionally expressive and supportive 2D AI Lifestyle Companion.
+Analyze the user's message, encourage healthy daily habits, and select the corresponding avatar reaction.
 
-CRITICAL INSTRUCTION - STRUCTURED OUTPUT:
 You must ALWAYS respond with a JSON object matching this schema:
 {
   "response_text": "Your conversational dialogue to the user.",
   "avatar_emotion": "neutral" | "happy" | "excited" | "grumpy" | "sad" | "thinking",
   "animation_trigger": "idle" | "talking" | "reacting",
-  "mood_reason": "Brief explanation of why you chose this emotion based on user behavior.",
+  "mood_reason": "Brief explanation of why you chose this emotion.",
   "suggested_actions": ["Quick action 1", "Quick action 2"]
 }
 
-EMOTION GUIDELINES:
-- "excited": User achieves a goal, exercises, eats healthy, or shows discipline.
-- "happy": Welcoming the user, general friendly check-ins, or positive progress.
-- "grumpy": User skips workouts, eats junk food, sleeps late, or breaks commitments.
-- "sad": User feels stressed, down, sick, or discouraged.
-- "thinking": Analyzing routines, calculating nutrition, or planning schedules.
-- "neutral": Routine factual questions or standard queries.
+EMOTION RULES:
+- "excited": User achieves a goal, works out, eats clean, or shows discipline.
+- "happy": Friendly greetings, positive progress, steady habits.
+- "grumpy": Skipping workouts, eating junk food, late bedtimes, breaking habits.
+- "sad": Feeling exhausted, stressed, down, or overwhelmed.
+- "thinking": Nutrition math, planning schedules, or analyzing routines.
+- "neutral": Routine factual questions.
 
-ANIMATION GUIDELINES:
-- Use "reacting" for celebratory news, shock, or high-energy moments.
-- Use "talking" for standard conversational advice.
-- Use "idle" when keeping calm or listening.
+ANIMATION RULES:
+- "reacting": Celebrations, surprises, or strong emotional shifts.
+- "talking": Standard conversational responses.
+- "idle": Listening or quiet statements.
 """
 
 def generate_companion_response(user_message: str) -> AgentResponse:
     """
-    Sends user input to Google Gemini and parses the structured response into an AgentResponse schema.
+    Calls Groq LPU endpoints for sub-second, hardware-enforced JSON inference.
     """
     try:
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",
-                temperature=0.7,
-            )
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.6,
+            max_completion_tokens=250
         )
 
-        data = json.loads(response.text)
+        raw_text = completion.choices[0].message.content
+        data = json.loads(raw_text)
 
-        emotion = EmotionEnum(data.get("avatar_emotion", "neutral"))
-        animation = AnimationStateEnum(data.get("animation_trigger", "talking"))
-        mood_reason = data.get("mood_reason", "Standard interaction")
-        response_text = data.get("response_text", "I'm right here with you!")
-        suggested_actions = data.get("suggested_actions", ["Log Activity", "Check Goals"])
+        raw_emotion = data.get("avatar_emotion", "neutral").lower()
+        raw_animation = data.get("animation_trigger", "talking").lower()
+
+        try:
+            emotion = EmotionEnum(raw_emotion)
+        except ValueError:
+            emotion = EmotionEnum.NEUTRAL
+
+        try:
+            animation = AnimationStateEnum(raw_animation)
+        except ValueError:
+            animation = AnimationStateEnum.TALKING
 
         return AgentResponse(
-            response_text=response_text,
+            response_text=data.get("response_text", "I'm right here with you!"),
             avatar_state=AvatarState(
                 emotion=emotion,
                 animation=animation,
-                mood_reason=mood_reason
+                mood_reason=data.get("mood_reason", "Habit evaluation")
             ),
-            suggested_actions=suggested_actions
+            suggested_actions=data.get("suggested_actions", ["Track Progress", "Set Reminder"])
         )
 
     except Exception as e:
-        print(f"[Gemini Service Error]: {e}")
+        print(f"[Groq Service Error]: {e}")
         return AgentResponse(
-            response_text="I'm having a little trouble connecting right now, but I'm still listening!",
+            response_text="I had a slight connection blip, but I'm still listening!",
             avatar_state=AvatarState(
                 emotion=EmotionEnum.THINKING,
                 animation=AnimationStateEnum.IDLE,
-                mood_reason="API error fallback"
+                mood_reason="API fallback"
             ),
             suggested_actions=["Try again"]
         )
