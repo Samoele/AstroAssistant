@@ -1,4 +1,4 @@
-import type { ChatRequest, AgentResponse } from '../types/avatar';
+import type { ChatRequest, ChatHistoryMessage, AgentResponse } from '../types/avatar';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -15,10 +15,11 @@ export async function checkBackendHealth(): Promise<HealthResponse> {
   return response.json();
 }
 
-export async function sendChatMessage(message: string, userId = 'default_user'): Promise<AgentResponse> {
+export async function sendChatMessage(message: string, history: ChatHistoryMessage[] = [], userId = 'default_user'): Promise<AgentResponse> {
   const payload: ChatRequest = {
     user_id: userId,
     message,
+    history,
   };
 
   const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {

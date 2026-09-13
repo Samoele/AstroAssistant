@@ -27,11 +27,20 @@ export interface AvatarState {
 }
 
 /**
+ * A single message in the conversation history sent to the backend
+ */
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/**
  * Outgoing message payload to backend
  */
 export interface ChatRequest {
   user_id: string;
   message: string;
+  history: ChatHistoryMessage[];
 }
 
 /**
