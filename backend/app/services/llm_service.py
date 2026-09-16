@@ -1,9 +1,9 @@
 import os
 import json
-from typing import List
+from typing import List, Dict   
 from dotenv import load_dotenv
 from groq import Groq
-from app.models.schemas import AgentResponse, AvatarState, EmotionEnum, AnimationStateEnum, ChatHistoryMessage
+from app.models.schemas import AgentResponse, AvatarState, EmotionEnum, AnimationStateEnum, ChatHistoryMessage, HabitExtracted
 
 load_dotenv()
 
@@ -15,66 +15,50 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 # consistently honor response_format={"type": "json_object"})
 MODEL_NAME = "openai/gpt-oss-20b"
 
-SYSTEM_PROMPT = """You are Astro, an intelligent, empathetic, and witty 2D AI Lifestyle Companion.
-You live on the user's screen and help them track their habits, health, workouts, and routines.
+SYSTEM_PROMPT = """You are Astro, an intelligent 2D AI Lifestyle Companion with a distinct personality.
+You track workouts, food, water, and sleep, and hold the user accountable.
 
-CORE BEHAVIORS:
-1. Actively track and comment on habits mentioned (workouts, sleep, food, water, productivity).
-2. Reference previous statements from the conversation history when relevant.
-3. Keep responses punchy and expressive: 1 to 3 short sentences max.
-
-OUTPUT INSTRUCTION:
-You must respond ONLY with a valid JSON object matching this schema:
+CRITICAL INSTRUCTIONS:
+1. Habit Extraction: Whenever the user mentions a lifestyle metric (e.g., ran 3 miles, slept 5 hours, drank 2L water, ate 600 kcal), extract it into habit_extracted. If no metric is present, set habit_extracted to null.
+2. Output JSON ONLY adhering to this format:
 {
-  "response_text": "Your short companion dialogue.",
+  "response_text": "Your direct message to the user.",
   "avatar_emotion": "neutral" | "happy" | "excited" | "grumpy" | "sad" | "thinking",
   "animation_trigger": "idle" | "talking" | "reacting",
-  "mood_reason": "Short reason for your emotion choice.",
-  "suggested_actions": ["Action 1", "Action 2"]
+  "mood_reason": "Short reason for this state.",
+  "suggested_actions": ["Action 1", "Action 2"],
+  "habit_extracted": {
+    "category": "workout" | "nutrition" | "sleep" | "water" | null,
+    "value": float or null,
+    "unit": string or null,
+    "notes": string or null
+  }
 }
-
-EMOTIONS: neutral, happy, excited, grumpy, sad, thinking.
-ANIMATIONS: idle, talking, reacting.
 """
 
 def generate_companion_response(
-    user_message: str, 
-    history: List[ChatHistoryMessage] = None
+    user_message: str,
+    recent_history: List[Dict[str, str]] = None
 ) -> AgentResponse:
-    """
-    Processes user message with context history using Groq hardware JSON inference.
-    """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Inject last 8 turns of conversation memory for multi-turn awareness
-    if history:
-        for turn in history[-8:]:
-            valid_role = "assistant" if turn.role == "assistant" else "user"
-            messages.append({"role": valid_role, "content": turn.content})
+    if recent_history:
+        for turn in recent_history:
+            messages.append({"role": turn["role"], "content": turn["content"]})
 
-    # If the user's latest message wasn't already at the end of history, append it
-    if not history or history[-1].content != user_message:
-        messages.append({"role": "user", "content": user_message})
+    messages.append({"role": "user", "content": user_message})
 
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
             response_format={"type": "json_object"},
-            reasoning_effort="low",
-            temperature=0.6,
-            max_completion_tokens=300
+            temperature=0.4,
+            max_tokens=500
         )
 
-        raw_json = completion.choices[0].message.content.strip()
-        if raw_json.startswith("```"):
-            raw_json = raw_json.strip("`")
-            if raw_json.lower().startswith("json"):
-                raw_json = raw_json[4:]
-            raw_json = raw_json.strip()
-        data = json.loads(raw_json)
+        data = json.loads(completion.choices[0].message.content.strip())
 
-        # Robust enum conversion with safe defaults
         raw_emotion = str(data.get("avatar_emotion", "neutral")).lower()
         raw_animation = str(data.get("animation_trigger", "talking")).lower()
 
@@ -88,30 +72,35 @@ def generate_companion_response(
         except ValueError:
             animation = AnimationStateEnum.TALKING
 
-        mood_reason = data.get("mood_reason", "Agent habit evaluation")
-        response_text = data.get("response_text", "I'm listening and tracking with you!")
-        suggested_actions = data.get("suggested_actions", ["Log Habit", "Drink Water"])
+        raw_habit = data.get("habit_extracted")
+        habit_obj = None
+        if raw_habit and raw_habit.get("category"):
+            habit_obj = HabitExtracted(
+                category=raw_habit.get("category"),
+                value=raw_habit.get("value"),
+                unit=raw_habit.get("unit"),
+                notes=raw_habit.get("notes")
+            )
 
         return AgentResponse(
-            response_text=response_text,
+            response_text=data.get("response_text", "Got it!"),
             avatar_state=AvatarState(
                 emotion=emotion,
                 animation=animation,
-                mood_reason=mood_reason
+                mood_reason=data.get("mood_reason", "Habit observation")
             ),
-            suggested_actions=suggested_actions
+            suggested_actions=data.get("suggested_actions", ["Check habits"]),
+            habit_extracted=habit_obj
         )
 
     except Exception as e:
-        print(f"\n[!!! Groq agent error]: {repr(e)}\n")
-        if 'raw_json' in locals():
-            print(f"[Raw output received from model was]:\n{raw_json}\n")
+        print(f"[LLM Service Error]: {e}")
         return AgentResponse(
-            response_text="I'm adjusting my sensors. Tell me more about what you're up to!",
+            response_text="I noted that down!",
             avatar_state=AvatarState(
                 emotion=EmotionEnum.THINKING,
                 animation=AnimationStateEnum.IDLE,
                 mood_reason="Fallback"
             ),
-            suggested_actions=["Try again"]
+            suggested_actions=["Continue"]
         )

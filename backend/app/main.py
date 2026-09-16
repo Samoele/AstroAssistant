@@ -1,14 +1,27 @@
+from contextlib import asynccontextmanager
+from app.api.v1.api import api_router
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.db.session import engine, Base
 from app.models.schemas import (EmotionEnum, AnimationStateEnum, AvatarState, ChatRequest, AgentResponse)
 from app.services.llm_service import generate_companion_response # Import the service function to generate companion responses
 #import enum classes for avatar emotional and visual states
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    #Initialize SQL Alchemy engine and create tables if they don't exist
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
 
 # Create FastAPI instance
 app = FastAPI(
     title = "Astro AI API",
     description = "Astro assistant backend API for status and 2D states",
     version = "0.1.0",
+    lifespan=lifespan
 )
 
 #Configure CORS Middleware (connection allowed between backend port and frontend port)
@@ -31,9 +44,6 @@ async def root():
         "version": "0.1.0"
     }
 
-
-
-
 # @app.get binds HTTP GET requests targeting the '/health' URL to this function
 @app.get("/health", tags=["Health System Check"])
 async def health_check():
@@ -46,14 +56,5 @@ async def health_check():
         "message": "Astro API is online and running smoothly."
     }
 
-
-@app.post("/api/v1/chat", response_model=AgentResponse, tags=["Companion"])
-async def chat_endpoint(request: ChatRequest):
-    """
-    Receives user dialogue, processes it through Groq,
-    and returns dialogue plus avatar emotional/kinetic instructions.
-    """
-    return generate_companion_response(request.message, request.history)
-
-
-
+# Mount API router under the /api/v1 prefix
+app.include_router(api_router, prefix="/api/v1")
