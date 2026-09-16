@@ -26,6 +26,12 @@ class AnimationStateEnum(str, Enum):
     TALKING = "talking"
     REACTING = "reacting"
 
+class HabitExtracted(BaseModel):
+    category: Optional[str] = None  # "workout", "nutrition", "sleep", "water", or None
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    notes: Optional[str] = None
+
 class AvatarState(BaseModel):
     """
     Combined state payload defining how the character should present visually.
@@ -66,5 +72,7 @@ class AgentResponse(BaseModel):
         default_factory=list, 
         description="Quick-reply action buttons (e.g., 'Log Meal', 'View Goals')"
     )
+    habit_extracted: Optional[HabitExtracted] = Field(
+        default=None)
 
 
