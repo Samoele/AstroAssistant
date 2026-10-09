@@ -1,139 +1,106 @@
-import { useEffect, useRef, useState } from 'react';
-import { motion, useAnimationControls } from 'framer-motion';
+import React, { useEffect, useRef, useState } from 'react';
 import type { AvatarEmotion, AvatarAnimation } from '../types/avatar';
 
-interface AvatarCanvasProps {
+interface AvatarProps {
   emotion: AvatarEmotion;
   animation: AvatarAnimation;
   width?: number;
   height?: number;
 }
 
-const ANIMATION_ROW_MAP: Record<AvatarAnimation, number> = {
-  idle: 0,
-  talking: 1,
-  reacting: 2,
+const SPRITE_CONFIG = {
+  src: '/sprites/penguin-sprites.png',
+  frameWidth: 64,
+  frameHeight: 64,
+  fps: 6,
 };
 
-const COLS = 4;
-const ROWS = 3;
-// Last column of every row is a dedicated closed-eye frame in the sheet;
-// body motion cycles the rest so blinking can be timed independently.
-const BLINK_COL = COLS - 1;
-const BODY_COLS = COLS - 1;
-const FPS = 4;
-const BLINK_HOLD_MS = 160;
-const BLINK_MIN_GAP_MS = 2200;
-const BLINK_MAX_GAP_MS = 5000;
+const ROW_MAPPING: Record<AvatarEmotion, number> = {
+  neutral: 0,
+  happy: 1,
+  grumpy: 2,
+  excited: 3,
+  sad: 4,
+  thinking: 5,
+};
 
-function randomBetween(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
+const ANIMATION_FRAMES: Record<AvatarAnimation, number[]> = {
+  idle: [0, 1],
+  talking: [0, 2, 3, 2],
+  reacting: [0, 1, 2, 3, 2, 1],
+};
 
 export default function AvatarCanvas({
   emotion,
   animation,
-  width = 256,
-  height = 256,
-}: AvatarCanvasProps) {
+  width = 144,
+  height = 144,
+}: AvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isBlinking, setIsBlinking] = useState(false);
-  const popControls = useAnimationControls();
+  const [spriteImage, setSpriteImage] = useState<HTMLImageElement | null>(null);
 
-  const spriteSrc = `/sprites/${emotion}.png`;
-
+  // 1. Reliable Image Loading with Error Detection
   useEffect(() => {
-    setIsLoaded(false);
     const img = new Image();
-    img.src = spriteSrc;
+    img.src = SPRITE_CONFIG.src;
 
     img.onload = () => {
-      imageRef.current = img;
-      setIsLoaded(true);
+      console.log('✅ Sprite sheet loaded successfully:', img.naturalWidth, 'x', img.naturalHeight);
+      setSpriteImage(img);
     };
 
     img.onerror = () => {
-      if (img.src !== `${window.location.origin}/sprites/neutral.png`) {
-        img.src = '/sprites/neutral.png';
-      }
-    };
-  }, [spriteSrc]);
-
-  // A quick "pop" on state changes reads as a reaction instead of an instant snap.
-  useEffect(() => {
-    popControls.start({
-      scale: [1, 1.06, 1],
-      transition: { duration: 0.35, ease: 'easeOut' },
-    });
-  }, [emotion, animation, popControls]);
-
-  // Blink on its own randomized clock so it lands like a natural tic rather
-  // than the fixed once-per-loop cadence the raw frame cycle would produce.
-  useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>;
-    let holdId: ReturnType<typeof setTimeout>;
-
-    const scheduleBlink = () => {
-      timeoutId = setTimeout(() => {
-        setIsBlinking(true);
-        holdId = setTimeout(() => {
-          setIsBlinking(false);
-          scheduleBlink();
-        }, BLINK_HOLD_MS);
-      }, randomBetween(BLINK_MIN_GAP_MS, BLINK_MAX_GAP_MS));
-    };
-
-    scheduleBlink();
-    return () => {
-      clearTimeout(timeoutId);
-      clearTimeout(holdId);
+      console.error(
+        `❌ Failed to load sprite sheet from "${SPRITE_CONFIG.src}". Make sure the file exists at frontend/public/penguin-sprites.png`
+      );
     };
   }, []);
 
+  // 2. Animation Loop (Only runs once spriteImage is ready)
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!spriteImage) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.imageSmoothingEnabled = false;
 
     let animationFrameId: number;
-    let currentFrame = 0;
-    let lastTimestamp = performance.now();
-    const frameInterval = 1000 / FPS;
+    let lastTimestamp = 0;
+    let currentFrameIndex = 0;
 
-    const render = (now: number) => {
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
-      const img = imageRef.current;
+    const frameSequence = ANIMATION_FRAMES[animation] || [0];
+    const targetRow = ROW_MAPPING[emotion] ?? 0;
+    const intervalMs = 1000 / SPRITE_CONFIG.fps;
 
-      if (canvas && ctx && img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-        const frameWidth = img.naturalWidth / COLS;
-        const frameHeight = img.naturalHeight / ROWS;
+    const render = (timestamp: number) => {
+      if (!lastTimestamp) lastTimestamp = timestamp;
+      const elapsed = timestamp - lastTimestamp;
 
-        const elapsed = now - lastTimestamp;
-        if (elapsed >= frameInterval) {
-          currentFrame = (currentFrame + 1) % BODY_COLS;
-          lastTimestamp = now - (elapsed % frameInterval);
-        }
-
-        const col = isBlinking ? BLINK_COL : currentFrame;
-        const sx = col * frameWidth;
-        const sy = ANIMATION_ROW_MAP[animation] * frameHeight;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.imageSmoothingEnabled = false;
-
-        ctx.drawImage(
-          img,
-          Math.floor(sx),
-          Math.floor(sy),
-          Math.floor(frameWidth),
-          Math.floor(frameHeight),
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
+      if (elapsed >= intervalMs) {
+        currentFrameIndex = (currentFrameIndex + 1) % frameSequence.length;
+        lastTimestamp = timestamp - (elapsed % intervalMs);
       }
+
+      const col = frameSequence[currentFrameIndex];
+      const sx = col * SPRITE_CONFIG.frameWidth;
+      const sy = targetRow * SPRITE_CONFIG.frameHeight;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.drawImage(
+        spriteImage,
+        Math.floor(sx),
+        Math.floor(sy),
+        SPRITE_CONFIG.frameWidth,
+        SPRITE_CONFIG.frameHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
 
       animationFrameId = requestAnimationFrame(render);
     };
@@ -143,30 +110,24 @@ export default function AvatarCanvas({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [isLoaded, animation, isBlinking]);
+  }, [spriteImage, emotion, animation]);
 
   return (
-    <motion.div
-      className="flex items-center justify-center bg-transparent"
-      animate={animation === 'idle' ? { y: [0, -3, 0] } : { y: 0 }}
-      transition={
-        animation === 'idle'
-          ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' }
-          : { duration: 0.2 }
-      }
+    <div
+      style={{ width, height }}
+      className="relative flex items-center justify-center select-none bg-slate-950/40 rounded-xl border border-slate-800/60"
     >
-      <motion.canvas
+      <canvas
         ref={canvasRef}
-        animate={popControls}
-        width={width}
-        height={height}
-        style={{
-          imageRendering: 'pixelated',
-          background: 'transparent',
-          opacity: isLoaded ? 1 : 0,
-          transition: 'opacity 150ms ease-out',
-        }}
+        width={SPRITE_CONFIG.frameWidth}
+        height={SPRITE_CONFIG.frameHeight}
+        className="w-full h-full [image-rendering:pixelated]"
       />
-    </motion.div>
+      {!spriteImage && (
+        <span className="absolute text-[10px] text-slate-500 font-mono">
+          Loading sprite...
+        </span>
+      )}
+    </div>
   );
 }

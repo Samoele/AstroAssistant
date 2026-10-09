@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { checkBackendHealth, sendChatMessage } from './services/api';
+import { checkBackendHealth, fetchChatHistory, sendChatMessage } from './services/api';
 import AvatarCanvas from './components/avatarCanvas';
 import ChatWindow from './components/chatWindow';
 import type { AvatarEmotion, AvatarAnimation, ChatMessage } from './types/avatar';
@@ -21,13 +21,27 @@ export default function App() {
   const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
+  // Hydrate health and chat history on initial mount
   useEffect(() => {
-    checkBackendHealth()
-      .then((data) => {
-        if (data.status === 'online') setBackendStatus('connected');
-      })
-      .catch(() => setBackendStatus('disconnected'));
+    async function initSession() {
+      try {
+        const health = await checkBackendHealth();
+        if (health.status === 'online') {
+          setBackendStatus('connected');
+          const savedMessages = await fetchChatHistory('user_default');
+          setMessages(savedMessages);
+        }
+      } catch (err) {
+        console.error('Initialization error:', err);
+        setBackendStatus('disconnected');
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    }
+
+    initSession();
   }, []);
 
   const handleSend = async (text: string) => {
@@ -39,20 +53,12 @@ export default function App() {
       text 
     };
 
-    // 1. Build updated history array including the user's latest message
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
+    setMessages((prev) => [...prev, userMessage]);
     setIsSending(true);
-
-    // 2. Map chat messages to role/content pairs for backend context memory
-    const historyPayload = updatedMessages.map((m) => ({
-      role: m.role,
-      content: m.text,
-    }));
+    setCurrentAnimation('talking');
 
     try {
-      // 3. Send message with prior conversational history
-      const data = await sendChatMessage(text, historyPayload, 'user_default');
+      const data = await sendChatMessage(text, 'user_default');
 
       setMessages((prev) => [
         ...prev,
@@ -65,7 +71,6 @@ export default function App() {
       setCurrentEmotion(nextEmotion);
       setCurrentAnimation(nextAnimation);
 
-      // Return avatar to idle after 3.5s so it does not stay talking/reacting forever
       if (nextAnimation !== 'idle') {
         setTimeout(() => {
           setCurrentAnimation('idle');
@@ -167,7 +172,13 @@ export default function App() {
       </div>
 
       {/* Chat message stream */}
-      <ChatWindow messages={messages} isSending={isSending} onSend={handleSend} />
+      {isLoadingHistory ? (
+        <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
+          Loading conversation memory...
+        </div>
+      ) : (
+        <ChatWindow messages={messages} isSending={isSending} onSend={handleSend} />
+      )}
     </div>
   );
 }
