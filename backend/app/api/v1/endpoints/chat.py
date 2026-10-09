@@ -10,17 +10,33 @@ from app.services.llm_service import generate_companion_response
 router = APIRouter()
 
 @router.get("/history")
-async def get_history(user_id: str = "user_default", db: AsyncSession = Depends(get_db)):
-    """Fetches full chat history from SQLite for frontend session restore."""
+async def get_history(
+    user_id: str = "user_default", 
+    limit: int = 30, 
+    db: AsyncSession = Depends(get_db)
+):
+    #Fetches the latest 'limit' messages ordered chronologically
+    #so the UI displays the recent conversation without performance degradation.
+    # 1. Fetch the newest records first using DESC + LIMIT
     result = await db.execute(
         select(ConversationMessage)
         .where(ConversationMessage.user_id == user_id)
-        .order_by(ConversationMessage.timestamp.asc())
+        .order_by(ConversationMessage.timestamp.desc())
+        .limit(limit)
     )
     records = result.scalars().all()
+
+    # 2. Reverse the list so messages display chronologically (oldest to newest)
+    chronological_records = list(reversed(records))
+
     return [
-        {"id": str(r.id), "role": r.role, "text": r.content, "emotion": r.emotion}
-        for r in records
+        {
+            "id": str(r.id),
+            "role": r.role,
+            "text": r.content,
+            "emotion": r.emotion
+        }
+        for r in chronological_records
     ]
 
 @router.post("/chat", response_model=AgentResponse)
