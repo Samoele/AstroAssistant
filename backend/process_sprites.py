@@ -2,7 +2,7 @@ import os
 import math
 from PIL import Image
 
-INPUT_IMAGE = "Penguin_sprite.jpg"
+INPUT_IMAGE = "Penguin_Sprite.jpg"
 OUTPUT_IMAGE = "../frontend/public/sprites/penguin-sprites.png"
 COLS = 4
 ROWS = 6
