@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Dict   
+from typing import List, Dict, Any, Optional 
 from dotenv import load_dotenv
 from groq import Groq
 from app.models.schemas import AgentResponse, AvatarState, EmotionEnum, AnimationStateEnum, ChatHistoryMessage, HabitExtracted
@@ -38,8 +38,11 @@ CRITICAL INSTRUCTIONS:
 
 def generate_companion_response(
     user_message: str,
-    recent_history: List[Dict[str, str]] = None
+    recent_history: List[Dict[str, str]] = None,
+    lifestyle_summary: Optional[str] = None,
+    profile_data: Optional[Dict[str, Any]] = None,
 ) -> AgentResponse:
+    system_instruction = build_system_prompt(lifestyle_summary, profile_data)
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     if recent_history:
@@ -104,3 +107,36 @@ def generate_companion_response(
             ),
             suggested_actions=["Continue"]
         )
+
+def build_system_prompt(lifestyle_summary: Optional[str] = None, profile_data: Optional[Dict[str, Any]] = None) -> str:
+    summary_text = lifestyle_summary or "No habit data available yet."
+    profile = profile_data or {}
+    
+    avatar_name = profile.get("avatar_name", "Astro")
+    user_name = profile.get("display_name", "User")
+    archetype = profile.get("lifestyle_archetype", "High-Energy Builder")
+    water_goal = profile.get("daily_water_target", 3.0)
+    sleep_goal = profile.get("daily_sleep_target", 7.5)
+    workout_goal = profile.get("weekly_workout_target", 4)
+    goals = ", ".join(profile.get("primary_goals", []))
+
+    return f"""You are {avatar_name}, an intelligent, witty, and supportive 2D AI Lifestyle Companion for {user_name}.
+User Persona Archetype: {archetype}
+User Custom Targets:
+- Daily Hydration Target: {water_goal} Liters
+- Daily Sleep Target: {sleep_goal} Hours
+- Weekly Workout Target: {workout_goal} Sessions
+- Primary Focus Goals: {goals}
+
+CURRENT 7-DAY LIFESTYLE SNAPSHOT:
+{summary_text}
+
+AGENT BEHAVIORS:
+1. Actively reference trends and hold {user_name} accountable against THEIR exact customized targets above.
+2. Empathize when sleep is under {sleep_goal}h or cheer them when they hit hydration ({water_goal}L) or workout targets ({workout_goal}/week).
+3. Keep responses punchy and motivating: 2 to 3 sentences maximum.
+4. Extract any quantifiable metrics mentioned in the current user message into habit_extracted (category, value, unit, notes).
+
+CRITICAL FORMAT REQUIREMENT:
+Return ONLY a valid JSON object matching the standard agent schema.
+"""
