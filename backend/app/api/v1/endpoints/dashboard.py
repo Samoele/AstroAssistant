@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.db.session import get_db
 from app.db.models import HabitLog
-
+from app.api.v1.endpoints.chat import get_or_create_profile
 
 router= APIRouter()
 
@@ -56,24 +56,26 @@ async def get_dashboard_data(user_id: str = "user_default", db: AsyncSession = D
         for log in week_logs[:10]
     ]
 
+    profile = await get_or_create_profile(user_id, db)
+
     return {
         "today": {
             "water_liters": round(water_today, 2),
-            "water_goal": 2.5,
+            "water_goal": profile.daily_water_target,
             "sleep_hours": round(sleep_today, 1),
-            "sleep_goal": 8.0,
+            "sleep_goal": profile.daily_sleep_target,
             "workouts_completed": len(workouts_today)
         },
         "trends": {
             "weekly_workouts": workouts_week,
-            "weekly_workout_target": 4,
+            "weekly_workout_target": profile.weekly_workout_target,
             "avg_sleep_hours": round(avg_sleep_week, 1),
             "active_streak_days": min(workouts_week + (1 if water_today > 0 else 0), 7)
         },
         "profile": {
-            "name": "User",
-            "lifestyle_archetype": "Endurance & Recovery Focus",
-            "primary_goals": ["Hit 2.5L Water Daily", "Average > 7.5h Sleep", "4x Workouts/Week"]
+            "name": profile.display_name,
+            "lifestyle_archetype": profile.lifestyle_archetype,
+            "primary_goals": profile.primary_goals or []
         },
         "recent_activity": recent_activity
     }

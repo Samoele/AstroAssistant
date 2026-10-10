@@ -3,8 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.db.session import get_db
-from app.db.models import ConversationMessage, HabitLog
-from app.models.schemas import ChatRequest, AgentResponse
+from app.db.models import ConversationMessage, HabitLog, UserProfile
+from app.models.schemas import ChatRequest, AgentResponse, UserProfileResponse, UserProfileUpdate
 from app.services.llm_service import generate_companion_response
 
 router = APIRouter()
@@ -60,7 +60,23 @@ async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)
     db.add(user_msg_record)
 
     # 3. Query LLM with injected DB history
-    response = generate_companion_response(request.message, formatted_history)
+    profile = await get_or_create_profile(request.user_id, db)
+    profile_dict = {
+        "avatar_name": profile.avatar_name,
+        "display_name": profile.display_name,
+        "lifestyle_archetype": profile.lifestyle_archetype,
+        "daily_water_target": profile.daily_water_target,
+        "daily_sleep_target": profile.daily_sleep_target,
+        "weekly_workout_target": profile.weekly_workout_target,
+        "primary_goals": profile.primary_goals or [],
+    }
+
+    response = generate_companion_response(
+        user_message=request.message,
+        recent_history=formatted_history,
+        lifestyle_summary=lifestyle_summary,
+        profile_data=profile_dict
+    )
 
     # 4. Persist assistant reply to SQLite
     assistant_msg_record = ConversationMessage(
@@ -84,3 +100,49 @@ async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)
 
     await db.commit()
     return response
+
+
+async def get_or_create_profile(user_id: str, db: AsyncSession) -> UserProfile:
+    """Fetches user profile or seeds default values if first time."""
+    result = await db.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+    profile = result.scalars().first()
+    if not profile:
+        profile = UserProfile(
+            user_id=user_id,
+            display_name="User",
+            avatar_name="Astro",
+            lifestyle_archetype="High-Energy Builder",
+            daily_water_target=3.0,
+            daily_sleep_target=7.5,
+            weekly_workout_target=4,
+            primary_goals=[
+                "Hit daily hydration target",
+                "Maintain consistent sleep schedule",
+                "Hit weekly workout consistency"
+            ]
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+    return profile
+
+@router.get("/profile", response_model=UserProfileResponse)
+async def get_profile(user_id: str = "user_default", db: AsyncSession = Depends(get_db)):
+    profile = await get_or_create_profile(user_id, db)
+    return profile
+
+@router.put("/profile", response_model=UserProfileResponse)
+async def update_profile(
+    update_data: UserProfileUpdate,
+    user_id: str = "user_default",
+    db: AsyncSession = Depends(get_db)
+):
+    profile = await get_or_create_profile(user_id, db)
+    
+    update_dict = update_data.model_dump(exclude_unset=True)
+    for key, value in update_dict.items():
+        setattr(profile, key, value)
+        
+    await db.commit()
+    await db.refresh(profile)
+    return profile

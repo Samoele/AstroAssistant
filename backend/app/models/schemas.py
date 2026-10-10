@@ -76,3 +76,27 @@ class AgentResponse(BaseModel):
         default=None)
 
 
+class UserProfileBase(BaseModel):
+    display_name: str
+    avatar_name: str
+    lifestyle_archetype: str
+    daily_water_target: float
+    daily_sleep_target: float
+    weekly_workout_target: int
+    primary_goals: List[str]
+
+class UserProfileUpdate(BaseModel):
+    display_name: Optional[str] = None
+    avatar_name: Optional[str] = None
+    lifestyle_archetype: Optional[str] = None
+    daily_water_target: Optional[float] = None
+    daily_sleep_target: Optional[float] = None
+    weekly_workout_target: Optional[int] = None
+    primary_goals: Optional[List[str]] = None
+
+class UserProfileResponse(UserProfileBase):
+    user_id: str
+
+    class Config:
+        from_attributes = True
+
